@@ -8,7 +8,6 @@ import gleam/list
 import gleam/option.{None}
 import gleam/result
 import gleam/string
-import gleam/string_tree
 import glisten.{Packet}
 
 const port = 6379
@@ -19,27 +18,34 @@ pub fn main() -> Nil {
   let assert Ok(_) =
     glisten.new(fn(_conn) { #(Nil, None) }, fn(state, msg, conn) {
       let assert Packet(msg) = msg
-      echo "msg"
-      echo msg
+      debug("msg: ~p", [msg])
+
       let assert Ok(#(command, _rest)) = parse(msg)
-      echo "command"
-      echo command
+      debug("command: ~p", [command])
 
-      let assert Ok(response) = handle(command)
+      let response_str = handle(command) |> value_to_string |> ensure_ending
+      debug("response: ~s", response_str)
 
-      let response_str = value_to_string(response) |> ensure_ending
-      io.println("response: " <> response_str)
       let response_bytes = bytes_tree.from_string(response_str)
-      echo response_bytes
+      debug("response_bytes: ~p", [response_bytes])
+
       let assert Ok(_) = glisten.send(conn, response_bytes)
 
       glisten.continue(state)
     })
     |> glisten.start(port)
 
-  printf("Listening on port: ~b\n", port)
+  info("Listening on port: ~b", port)
 
   process.sleep_forever()
+}
+
+fn info(format: String, args: a) {
+  printf(format <> "\n", args)
+}
+
+fn debug(format: String, args: a) {
+  printf(format <> "\n", args)
 }
 
 fn ensure_ending(str: String) -> String {
@@ -48,9 +54,6 @@ fn ensure_ending(str: String) -> String {
     False -> str <> "\r\n"
   }
 }
-
-// *2 \r\n $5 \r\n hello \r\n $5 \r\n world
-// let msg  = <<"*2\r\n$5\r\nhello\r\n$5\r\nworld">>
 
 fn read_line(
   from: BitArray,
@@ -79,7 +82,7 @@ fn read_integer(data: BitArray) -> Result(#(Int, BitArray), String) {
 
 type Value {
   RespStr(data: String)
-  // RespErr(data: String)
+  RespErr(data: String)
   // RespNum(data: Int)
   RespBulk(data: String)
   RespArr(data: List(Value))
@@ -92,6 +95,10 @@ fn lines_to_string(lines: List(String)) -> String {
 fn value_to_string(val: Value) -> String {
   case val {
     RespStr(data) ->
+      lines_to_string([
+        datatype_to_string(val) <> data,
+      ])
+    RespErr(data) ->
       lines_to_string([
         datatype_to_string(val) <> data,
       ])
@@ -111,6 +118,7 @@ fn value_to_string(val: Value) -> String {
 fn datatype_to_string(val: Value) -> String {
   case val {
     RespStr(_) -> "+"
+    RespErr(_) -> "-"
     RespBulk(_) -> "$"
     RespArr(_) -> "*"
   }
@@ -119,6 +127,7 @@ fn datatype_to_string(val: Value) -> String {
 fn value_size(val: Value) -> Int {
   case val {
     RespStr(val) -> string.byte_size(val)
+    RespErr(val) -> string.byte_size(val)
     RespBulk(val) -> string.byte_size(val)
     RespArr(items) -> list.length(items)
   }
@@ -169,37 +178,24 @@ fn parse_bulk(data: BitArray) -> Result(#(Value, BitArray), String) {
   Ok(#(RespBulk(line_str), rest))
 }
 
-// fn parse_string(data: BitArray) -> Result(#(Value, BitArray), String) {
-//   echo data
-//   Ok("Ok\r\n")
-// }
-
-// fn parse_error(data: BitArray) -> Result(String, String) {
-//   echo data
-//   Ok("Ok\r\n")
-// }
-
-// fn parse_integer(data: BitArray) -> Result(String, String) {
-//   echo data
-//   Ok("Ok\r\n")
-// }
-
-fn handle(value: Value) -> Result(Value, String) {
+fn handle(value: Value) -> Value {
   case value {
     RespArr(args) -> {
-      use cmd <- result.try(get_command(args))
+      let cmd = result.unwrap(get_command(args), UNKNOWN)
       case cmd {
-        COMMAND -> Ok(RespArr([]))
-        PING -> Ok(RespStr("PONG"))
+        COMMAND -> RespArr([])
+        PING -> RespStr("PONG")
+        _ -> RespErr("ERR couldnt get command")
       }
     }
-    _ -> Error("must be an arr")
+    _ -> RespErr("ERR must be an arr")
   }
 }
 
 type Command {
   COMMAND
   PING
+  UNKNOWN
 }
 
 fn get_command(args: List(Value)) -> Result(Command, String) {
