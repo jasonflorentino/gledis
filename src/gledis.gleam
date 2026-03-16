@@ -8,6 +8,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/result
 import gleam/string
+import gleam/string_tree
 import glisten.{Packet}
 
 const port = 6379
@@ -20,14 +21,17 @@ pub fn main() -> Nil {
       let assert Packet(msg) = msg
       echo "msg"
       echo msg
-      let assert Ok(#(value, _rest)) = parse(msg)
-      echo "value"
-      echo value
+      let assert Ok(#(command, _rest)) = parse(msg)
+      echo "command"
+      echo command
 
-      let assert Ok(response) = handle(value)
-      io.println("response: " <> response)
-      let assert Ok(_) = glisten.send(conn, bytes_tree.from_string(response))
-      echo "sent"
+      let assert Ok(response) = handle(command)
+
+      let response_str = value_to_string(response) |> ensure_ending
+      io.println("response: " <> response_str)
+      let response_bytes = bytes_tree.from_string(response_str)
+      echo response_bytes
+      let assert Ok(_) = glisten.send(conn, response_bytes)
 
       glisten.continue(state)
     })
@@ -36,6 +40,13 @@ pub fn main() -> Nil {
   printf("Listening on port: ~b\n", port)
 
   process.sleep_forever()
+}
+
+fn ensure_ending(str: String) -> String {
+  case string.ends_with(str, "\r\n") {
+    True -> str
+    False -> str <> "\r\n"
+  }
 }
 
 // *2 \r\n $5 \r\n hello \r\n $5 \r\n world
@@ -67,11 +78,50 @@ fn read_integer(data: BitArray) -> Result(#(Int, BitArray), String) {
 }
 
 type Value {
-  // RespStr(data: String)
+  RespStr(data: String)
   // RespErr(data: String)
   // RespNum(data: Int)
   RespBulk(data: String)
   RespArr(data: List(Value))
+}
+
+fn lines_to_string(lines: List(String)) -> String {
+  string.join(lines, "\r\n")
+}
+
+fn value_to_string(val: Value) -> String {
+  case val {
+    RespStr(data) ->
+      lines_to_string([
+        datatype_to_string(val) <> data,
+      ])
+    RespBulk(data) ->
+      lines_to_string([
+        datatype_to_string(val) <> int.to_string(value_size(val)),
+        data,
+      ])
+    RespArr(data) ->
+      lines_to_string([
+        datatype_to_string(val) <> int.to_string(value_size(val)),
+        lines_to_string(list.map(data, value_to_string)),
+      ])
+  }
+}
+
+fn datatype_to_string(val: Value) -> String {
+  case val {
+    RespStr(_) -> "+"
+    RespBulk(_) -> "$"
+    RespArr(_) -> "*"
+  }
+}
+
+fn value_size(val: Value) -> Int {
+  case val {
+    RespStr(val) -> string.byte_size(val)
+    RespBulk(val) -> string.byte_size(val)
+    RespArr(items) -> list.length(items)
+  }
 }
 
 fn parse(data: BitArray) -> Result(#(Value, BitArray), String) {
@@ -134,6 +184,41 @@ fn parse_bulk(data: BitArray) -> Result(#(Value, BitArray), String) {
 //   Ok("Ok\r\n")
 // }
 
-fn handle(_value: Value) -> Result(String, String) {
-  Ok("+4\r\nPONG\r\n")
+fn handle(value: Value) -> Result(Value, String) {
+  case value {
+    RespArr(args) -> {
+      use cmd <- result.try(get_command(args))
+      case cmd {
+        COMMAND -> Ok(RespArr([]))
+        PING -> Ok(RespStr("PONG"))
+      }
+    }
+    _ -> Error("must be an arr")
+  }
+}
+
+type Command {
+  COMMAND
+  PING
+}
+
+fn get_command(args: List(Value)) -> Result(Command, String) {
+  case args {
+    [val, ..] -> {
+      use cmd <- result.try(unwrap_bulk(val))
+      case string.uppercase(cmd) {
+        "PING" -> Ok(PING)
+        "COMMAND" -> Ok(COMMAND)
+        _ -> Error("unknown cmd")
+      }
+    }
+    _ -> Error("empty args")
+  }
+}
+
+fn unwrap_bulk(bulk: Value) -> Result(String, String) {
+  case bulk {
+    RespBulk(val) -> Ok(val)
+    _ -> Error("not a bulk")
+  }
 }
