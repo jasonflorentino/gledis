@@ -1,20 +1,20 @@
 # gledis
 
-[![Package Version](https://img.shields.io/hexpm/v/gledis)](https://hex.pm/packages/gledis)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gledis/)
+A toy implementation of Redis and the [Redis serialization protocol](https://redis.io/docs/latest/develop/reference/protocol-spec/) in [Gleam](https://gleam.run/) so I can get familiar with the language.
 
-```sh
-gleam add gledis@1
+## Try it
+
+```shell
+$ redis-cli
+127.0.0.1:6379> ping
+PONG
+127.0.0.1:6379> get name
+(nil)
+127.0.0.1:6379> set name jason
+OK
+127.0.0.1:6379> get name
+jason
 ```
-```gleam
-import gledis
-
-pub fn main() -> Nil {
-  // TODO: An example of the project in use
-}
-```
-
-Further documentation can be found at <https://hexdocs.pm/gledis>.
 
 ## Development
 

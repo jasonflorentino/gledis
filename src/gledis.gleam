@@ -5,15 +5,18 @@ import gleam/format.{printf}
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import glisten.{Packet}
+import table
 
 const port = 6379
 
 pub fn main() -> Nil {
   io.println("Starting server...")
+
+  let store = table.new("db1")
 
   let assert Ok(_) =
     glisten.new(fn(_conn) { #(Nil, None) }, fn(state, msg, conn) {
@@ -23,7 +26,8 @@ pub fn main() -> Nil {
       let assert Ok(#(command, _rest)) = parse(msg)
       debug("command: ~p", [command])
 
-      let response_str = handle(command) |> value_to_string |> ensure_ending
+      let response_str =
+        handle(command, store) |> value_to_string |> ensure_ending
       debug("response: ~s", response_str)
 
       let response_bytes = bytes_tree.from_string(response_str)
@@ -86,6 +90,7 @@ type Value {
   // RespNum(data: Int)
   RespBulk(data: String)
   RespArr(data: List(Value))
+  RespNull
 }
 
 fn lines_to_string(lines: List(String)) -> String {
@@ -107,6 +112,10 @@ fn value_to_string(val: Value) -> String {
         datatype_to_string(val) <> int.to_string(value_size(val)),
         data,
       ])
+    RespNull ->
+      lines_to_string([
+        datatype_to_string(val) <> int.to_string(value_size(val)),
+      ])
     RespArr(data) ->
       lines_to_string([
         datatype_to_string(val) <> int.to_string(value_size(val)),
@@ -121,6 +130,7 @@ fn datatype_to_string(val: Value) -> String {
     RespErr(_) -> "-"
     RespBulk(_) -> "$"
     RespArr(_) -> "*"
+    RespNull -> "$"
   }
 }
 
@@ -130,6 +140,7 @@ fn value_size(val: Value) -> Int {
     RespErr(val) -> string.byte_size(val)
     RespBulk(val) -> string.byte_size(val)
     RespArr(items) -> list.length(items)
+    RespNull -> -1
   }
 }
 
@@ -168,6 +179,7 @@ fn parse_array(data: BitArray) -> Result(#(Value, BitArray), String) {
 
 fn parse_bulk(data: BitArray) -> Result(#(Value, BitArray), String) {
   use #(size, rest) <- result.try(read_integer(data))
+  // TODO: handle parsing Bulk Null?
   use #(line_bin, rest) <- result.try(read_line(rest, <<>>))
   assert bit_array.byte_size(line_bin) == size
   use line_str <- result.try(
@@ -178,13 +190,23 @@ fn parse_bulk(data: BitArray) -> Result(#(Value, BitArray), String) {
   Ok(#(RespBulk(line_str), rest))
 }
 
-fn handle(value: Value) -> Value {
+type Command {
+  COMMAND
+  GET
+  PING
+  SET
+  UNKNOWN
+}
+
+fn handle(value: Value, store: table.Table(k, v)) -> Value {
   case value {
     RespArr(args) -> {
       let cmd = result.unwrap(get_command(args), UNKNOWN)
       case cmd {
         COMMAND -> RespArr([])
         PING -> RespStr("PONG")
+        GET -> get(args, store)
+        SET -> set(args, store)
         _ -> RespErr("ERR couldnt get command")
       }
     }
@@ -192,23 +214,67 @@ fn handle(value: Value) -> Value {
   }
 }
 
-type Command {
-  COMMAND
-  PING
-  UNKNOWN
+fn use_args(
+  args: List(Value),
+  store: table.Table(k, v),
+  fun: fn(List(Value), table.Table(k, v)) -> Value,
+) -> Value {
+  case args {
+    [_cmd, ..args] -> {
+      fun(args, store)
+    }
+    [] -> RespErr("ERR couldnt handle get")
+  }
+}
+
+fn get(args: List(Value), store: table.Table(k, v)) -> Value {
+  use_args(args, store, fn(args, store) {
+    debug("get args: ~p", [args])
+    case args {
+      [RespBulk(key)] -> {
+        let val = table.get(store, key)
+        debug("got val: ~p", [val])
+        case val {
+          Some(val) -> RespStr(val)
+          None -> RespNull
+        }
+      }
+      _ -> RespErr("ERR invalid args")
+    }
+  })
+}
+
+fn set(args: List(Value), store: table.Table(k, v)) -> Value {
+  use_args(args, store, fn(args, store) {
+    debug("set args: ~p", [args])
+    case args {
+      [RespBulk(key), RespBulk(val)] -> {
+        debug("got key:val: ~s: ~s", [key, val])
+        table.set(store, key, val)
+        RespStr("OK")
+      }
+      _ -> RespErr("ERR invalid args")
+    }
+  })
 }
 
 fn get_command(args: List(Value)) -> Result(Command, String) {
   case args {
     [val, ..] -> {
       use cmd <- result.try(unwrap_bulk(val))
-      case string.uppercase(cmd) {
-        "PING" -> Ok(PING)
-        "COMMAND" -> Ok(COMMAND)
-        _ -> Error("unknown cmd")
-      }
+      Ok(command_from_string(cmd))
     }
     _ -> Error("empty args")
+  }
+}
+
+fn command_from_string(str: String) -> Command {
+  case string.uppercase(str) {
+    "COMMAND" -> COMMAND
+    "GET" -> GET
+    "PING" -> PING
+    "SET" -> SET
+    _ -> UNKNOWN
   }
 }
 
