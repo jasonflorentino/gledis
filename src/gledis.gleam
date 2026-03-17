@@ -2,12 +2,12 @@ import gleam/bytes_tree
 import gleam/erlang/process
 import gleam/io
 import gleam/option.{None}
-import gleam/string
 import glisten.{Packet}
 import internal/command
 import internal/log.{debug, info}
 import internal/resp
 import internal/table
+import internal/util
 
 const port = 6379
 
@@ -25,7 +25,7 @@ pub fn main() -> Nil {
       debug("command: ~p", [command])
 
       let response_str =
-        command.handle(command, store) |> resp.to_string |> ensure_ending
+        command.handle(command, store) |> resp.to_string |> util.ensure_ending
       debug("response: ~s", response_str)
 
       let response_bytes = bytes_tree.from_string(response_str)
@@ -40,11 +40,4 @@ pub fn main() -> Nil {
   info("Listening on port: ~b", port)
 
   process.sleep_forever()
-}
-
-fn ensure_ending(str: String) -> String {
-  case string.ends_with(str, "\r\n") {
-    True -> str
-    False -> str <> "\r\n"
-  }
 }

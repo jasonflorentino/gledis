@@ -1,6 +1,7 @@
 //// RESP 2
 
 import gleam/bit_array
+import gleam/bool.{guard}
 import gleam/int
 import gleam/list
 import gleam/result
@@ -23,7 +24,7 @@ pub fn parse(data: BitArray) -> Result(#(RespType, BitArray), String) {
     // <<":", rest:bytes>> -> parse_integer(rest)
     <<"$", rest:bytes>> -> parse_bulk(rest)
     <<"*", rest:bytes>> -> parse_array(rest)
-    _ -> Error("Unknown datatype byte")
+    _ -> Error("Invalid data")
   }
 }
 
@@ -54,7 +55,10 @@ fn parse_bulk(data: BitArray) -> Result(#(RespType, BitArray), String) {
   use #(size, rest) <- result.try(read_int(data))
   // TODO: handle parsing Bulk Null?
   use #(line_bin, rest) <- result.try(read_line(rest, <<>>))
-  assert bit_array.byte_size(line_bin) == size
+  use <- guard(
+    when: bit_array.byte_size(line_bin) != size,
+    return: Error("Invalid bulk"),
+  )
   use line_str <- result.try(
     result.map_error(bit_array.to_string(line_bin), fn(_) {
       "couldnt parse to string"
