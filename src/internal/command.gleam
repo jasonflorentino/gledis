@@ -1,4 +1,4 @@
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import internal/log.{debug}
@@ -6,6 +6,7 @@ import internal/resp.{
   type RespType, RespArr, RespBulk, RespErr, RespNull, RespStr,
 }
 import internal/table
+import internal/time.{type Time}
 
 type Command {
   COMMAND
@@ -15,7 +16,11 @@ type Command {
   UNKNOWN
 }
 
-pub fn handle(value: RespType, store: table.Table(String, String)) -> RespType {
+pub opaque type Value {
+  Value(val: String, expires_at: Option(Time))
+}
+
+pub fn handle(value: RespType, store: table.Table(String, Value)) -> RespType {
   case value {
     RespArr(args) -> {
       let cmd = result.unwrap(get_command(args), UNKNOWN)
@@ -33,8 +38,8 @@ pub fn handle(value: RespType, store: table.Table(String, String)) -> RespType {
 
 fn use_args(
   args: List(RespType),
-  store: table.Table(String, String),
-  fun: fn(List(RespType), table.Table(String, String)) -> RespType,
+  store: table.Table(String, Value),
+  fun: fn(List(RespType), table.Table(String, Value)) -> RespType,
 ) -> RespType {
   case args {
     [_cmd, ..args] -> {
@@ -44,15 +49,21 @@ fn use_args(
   }
 }
 
-fn get(args: List(RespType), store: table.Table(String, String)) -> RespType {
+fn get(args: List(RespType), store: table.Table(String, Value)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("get args: ~p", [args])
     case args {
       [RespBulk(key)] -> {
-        let val = table.get(store, key)
-        debug("got val: ~p", [val])
-        case val {
-          Some(val) -> RespStr(val)
+        let value = table.get(store, key)
+        debug("got val: ~p", [value])
+        case value {
+          Some(Value(val, expiry)) -> {
+            case expiry {
+              Some(expires_at) -> debug("got expriry: ~p", [expires_at])
+              None -> debug("no expiry", [])
+            }
+            RespStr(val)
+          }
           None -> RespNull
         }
       }
@@ -61,13 +72,13 @@ fn get(args: List(RespType), store: table.Table(String, String)) -> RespType {
   })
 }
 
-fn set(args: List(RespType), store: table.Table(String, String)) -> RespType {
+fn set(args: List(RespType), store: table.Table(String, Value)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("set args: ~p", [args])
     case args {
       [RespBulk(key), RespBulk(val)] -> {
         debug("got key:val: ~s: ~s", [key, val])
-        table.set(store, key, val)
+        table.set(store, key, Value(val:, expires_at: Some(time.now())))
         RespStr("OK")
       }
       _ -> RespErr("ERR invalid args")
