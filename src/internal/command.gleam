@@ -62,6 +62,7 @@ fn get(args: List(RespType), store: table.Table(String, Value)) -> RespType {
           Some(Value(val, Some(expires_at))) -> {
             case time.is_before(expires_at, time.now()) {
               True -> {
+                // TODO: background expiry process
                 table.del(store, [key])
                 RespNull
               }
@@ -104,6 +105,19 @@ fn set(args: List(RespType), store: table.Table(String, Value)) -> RespType {
                       Value(val:, expires_at: get_expiry(None)),
                     )
                     RespStr("OK")
+                  }
+                  Some(Value(_, Some(expires_at))) -> {
+                    case time.is_before(expires_at, time.now()) {
+                      True -> {
+                        table.set(
+                          store,
+                          key,
+                          Value(val:, expires_at: get_expiry(None)),
+                        )
+                        RespStr("OK")
+                      }
+                      False -> RespNull
+                    }
                   }
                   _ -> RespNull
                 }
