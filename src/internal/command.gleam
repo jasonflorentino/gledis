@@ -1,3 +1,5 @@
+import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
@@ -74,11 +76,61 @@ fn set(args: List(RespType), store: table.Table(String, Value)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("set args: ~p", [args])
     case args {
-      [RespBulk(key), RespBulk(val)] -> {
-        debug("got key:val: ~s: ~s", [key, val])
-        table.set(store, key, Value(val:, expires_at: get_expiry(Some(20))))
-        // table.set(store, key, Value(val:, expires_at: None))
-        RespStr("OK")
+      [RespBulk(key), RespBulk(val), ..rest] -> {
+        debug("got key:val: ~s:~s [~s]", [
+          key,
+          val,
+          int.to_string(list.length(rest)),
+        ])
+        case rest {
+          // Set with no expiry if no extra args
+          [] -> {
+            table.set(store, key, Value(val:, expires_at: get_expiry(None)))
+            RespStr("OK")
+          }
+          [RespBulk(nx_or_ex)] -> {
+            case nx_or_ex {
+              "EX" -> RespErr("ERR EX requires a number")
+              // Check existence before setting if one arg is NX
+              "NX" -> {
+                case table.get(store, key) {
+                  None -> {
+                    table.set(
+                      store,
+                      key,
+                      Value(val:, expires_at: get_expiry(None)),
+                    )
+                    RespStr("OK")
+                  }
+                  _ -> RespNull
+                }
+              }
+              _ -> RespErr("ERR invalid arg")
+            }
+          }
+          [RespBulk(nx_or_ex), RespBulk(seconds_or_err)] -> {
+            case nx_or_ex, seconds_or_err {
+              // if first arg is EX ensure second is a number and set with expiry
+              "EX", _ -> {
+                case int.base_parse(seconds_or_err, 10) {
+                  Ok(seconds) -> {
+                    table.set(
+                      store,
+                      key,
+                      Value(val:, expires_at: get_expiry(Some(seconds))),
+                    )
+                    RespStr("OK")
+                  }
+                  _ -> RespErr("ERR failed to parse EX number")
+                }
+              }
+              "NX", "EX" -> RespErr("ERR EX requires a number")
+              "NX", _ -> RespErr("ERR extra arg")
+              _, _ -> RespErr("ERR invalid args3")
+            }
+          }
+          _ -> RespErr("ERR invalid args2")
+        }
       }
       _ -> RespErr("ERR invalid args")
     }
