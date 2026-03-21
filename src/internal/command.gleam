@@ -54,17 +54,15 @@ fn get(args: List(RespType), store: table.Table(String, Value)) -> RespType {
     debug("get args: ~p", [args])
     case args {
       [RespBulk(key)] -> {
-        let value = table.get(store, key)
-        debug("got val: ~p", [value])
-        case value {
-          Some(Value(val, expiry)) -> {
-            case expiry {
-              Some(expires_at) -> debug("got expriry: ~p", [expires_at])
-              None -> debug("no expiry", [])
-            }
-            RespStr(val)
-          }
+        case table.get(store, key) {
           None -> RespNull
+          Some(Value(_, None)) -> RespNull
+          Some(Value(val, Some(expires_at))) -> {
+            case time.is_before(expires_at, time.now()) {
+              True -> RespNull
+              False -> RespStr(val)
+            }
+          }
         }
       }
       _ -> RespErr("ERR invalid args")
@@ -78,12 +76,20 @@ fn set(args: List(RespType), store: table.Table(String, Value)) -> RespType {
     case args {
       [RespBulk(key), RespBulk(val)] -> {
         debug("got key:val: ~s: ~s", [key, val])
-        table.set(store, key, Value(val:, expires_at: Some(time.now())))
+        table.set(store, key, Value(val:, expires_at: get_expiry(Some(20))))
+        // table.set(store, key, Value(val:, expires_at: None))
         RespStr("OK")
       }
       _ -> RespErr("ERR invalid args")
     }
   })
+}
+
+fn get_expiry(ttl_seconds: Option(Int)) -> Option(Time) {
+  case ttl_seconds {
+    Some(ttl) -> Some(time.add_seconds(time.now(), ttl))
+    None -> None
+  }
 }
 
 fn get_command(args: List(RespType)) -> Result(Command, String) {
