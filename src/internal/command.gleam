@@ -15,7 +15,7 @@ type Command {
   UNKNOWN
 }
 
-pub fn handle(value: RespType, store: table.Table(k, v)) -> RespType {
+pub fn handle(value: RespType, store: table.Table(String, String)) -> RespType {
   case value {
     RespArr(args) -> {
       let cmd = result.unwrap(get_command(args), UNKNOWN)
@@ -33,8 +33,8 @@ pub fn handle(value: RespType, store: table.Table(k, v)) -> RespType {
 
 fn use_args(
   args: List(RespType),
-  store: table.Table(k, v),
-  fun: fn(List(RespType), table.Table(k, v)) -> RespType,
+  store: table.Table(String, String),
+  fun: fn(List(RespType), table.Table(String, String)) -> RespType,
 ) -> RespType {
   case args {
     [_cmd, ..args] -> {
@@ -44,7 +44,7 @@ fn use_args(
   }
 }
 
-fn get(args: List(RespType), store: table.Table(k, v)) -> RespType {
+fn get(args: List(RespType), store: table.Table(String, String)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("get args: ~p", [args])
     case args {
@@ -61,7 +61,7 @@ fn get(args: List(RespType), store: table.Table(k, v)) -> RespType {
   })
 }
 
-fn set(args: List(RespType), store: table.Table(k, v)) -> RespType {
+fn set(args: List(RespType), store: table.Table(String, String)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("set args: ~p", [args])
     case args {

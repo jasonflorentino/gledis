@@ -8,7 +8,7 @@ pub opaque type Table(k, v) {
 }
 
 /// Returns the number of keys that were removed
-pub fn del(table: Table(k, v), keys: List(String)) -> Int {
+pub fn del(table: Table(k, v), keys: List(k)) -> Int {
   list.fold(keys, 0, fn(count, key) {
     case ets_member(name(table), key) {
       True -> {
@@ -20,11 +20,11 @@ pub fn del(table: Table(k, v), keys: List(String)) -> Int {
   })
 }
 
-pub fn set(table: Table(k, v), key: String, val: String) -> Nil {
+pub fn set(table: Table(k, v), key: k, val: v) -> Nil {
   ets_insert(name(table), [#(key, val)])
 }
 
-pub fn get(table: Table(k, v), key: String) -> Option(String) {
+pub fn get(table: Table(k, v), key: k) -> Option(v) {
   case ets_lookup(name(table), key) {
     [#(_kk, vv)] -> Some(vv)
     _ -> None
