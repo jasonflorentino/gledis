@@ -58,10 +58,13 @@ fn get(args: List(RespType), store: table.Table(String, Value)) -> RespType {
       [RespBulk(key)] -> {
         case table.get(store, key) {
           None -> RespNull
-          Some(Value(_, None)) -> RespNull
+          Some(Value(val, None)) -> RespStr(val)
           Some(Value(val, Some(expires_at))) -> {
             case time.is_before(expires_at, time.now()) {
-              True -> RespNull
+              True -> {
+                table.del(store, [key])
+                RespNull
+              }
               False -> RespStr(val)
             }
           }
