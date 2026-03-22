@@ -9,6 +9,10 @@ pub fn now() -> Time {
   timestamp.system_time()
 }
 
+pub fn is_after(a: Time, b: Time) -> Bool {
+  timestamp.compare(a, b) == order.Gt
+}
+
 pub fn is_before(a: Time, b: Time) -> Bool {
   timestamp.compare(a, b) == order.Lt
 }

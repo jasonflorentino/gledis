@@ -76,77 +76,60 @@ fn get(args: List(RespType), store: table.Table(String, Value)) -> RespType {
   })
 }
 
+type SetOpts {
+  SetOpts(nx: Bool, ex: Option(Int))
+}
+
+fn parse_set_opts(rest: List(RespType)) -> Result(SetOpts, String) {
+  case rest {
+    [] -> Ok(SetOpts(nx: False, ex: None))
+    [RespBulk("NX")] -> Ok(SetOpts(nx: True, ex: None))
+    [RespBulk("EX")] -> Error("ERR EX requires a number")
+    [RespBulk("NX"), RespBulk("EX")] -> Error("ERR EX requires a number")
+    [RespBulk("EX"), RespBulk(n)] -> {
+      case int.base_parse(n, 10) {
+        Ok(seconds) -> Ok(SetOpts(nx: False, ex: Some(seconds)))
+        Error(_) -> Error("ERR failed to parse EX number")
+      }
+    }
+    [RespBulk("NX"), RespBulk("EX"), RespBulk(n)] -> {
+      case int.base_parse(n, 10) {
+        Ok(seconds) -> Ok(SetOpts(nx: True, ex: Some(seconds)))
+        Error(_) -> Error("ERR failed to parse EX number")
+      }
+    }
+    _ -> Error("ERR invalid args")
+  }
+}
+
 fn set(args: List(RespType), store: table.Table(String, Value)) -> RespType {
   use_args(args, store, fn(args, store) {
     debug("set args: ~p", [args])
     case args {
       [RespBulk(key), RespBulk(val), ..rest] -> {
-        debug("got key:val: ~s:~s [~s]", [
+        debug("got key:val: ~s:~s rest_len(~s)", [
           key,
           val,
           int.to_string(list.length(rest)),
         ])
-        case rest {
-          // Set with no expiry if no extra args
-          [] -> {
-            table.set(store, key, Value(val:, expires_at: get_expiry(None)))
-            RespStr("OK")
-          }
-          [RespBulk(nx_or_ex)] -> {
-            case nx_or_ex {
-              "EX" -> RespErr("ERR EX requires a number")
-              // Check existence before setting if one arg is NX
-              "NX" -> {
-                case table.get(store, key) {
-                  None -> {
-                    table.set(
-                      store,
-                      key,
-                      Value(val:, expires_at: get_expiry(None)),
-                    )
-                    RespStr("OK")
-                  }
-                  Some(Value(_, Some(expires_at))) -> {
-                    case time.is_before(expires_at, time.now()) {
-                      True -> {
-                        table.set(
-                          store,
-                          key,
-                          Value(val:, expires_at: get_expiry(None)),
-                        )
-                        RespStr("OK")
-                      }
-                      False -> RespNull
-                    }
-                  }
-                  _ -> RespNull
-                }
+        case parse_set_opts(rest) {
+          Error(msg) -> RespErr(msg)
+          Ok(SetOpts(nx, ex)) -> {
+            let already_exists: Bool = case table.get(store, key) {
+              None -> False
+              Some(Value(_, Some(expires_at))) ->
+                time.is_after(expires_at, time.now())
+              _ -> True
+            }
+            let should_skip = nx == True && already_exists == True
+            case should_skip {
+              True -> RespNull
+              False -> {
+                table.set(store, key, Value(val:, expires_at: get_expiry(ex)))
+                RespStr("OK")
               }
-              _ -> RespErr("ERR invalid arg")
             }
           }
-          [RespBulk(nx_or_ex), RespBulk(seconds_or_err)] -> {
-            case nx_or_ex, seconds_or_err {
-              // if first arg is EX ensure second is a number and set with expiry
-              "EX", _ -> {
-                case int.base_parse(seconds_or_err, 10) {
-                  Ok(seconds) -> {
-                    table.set(
-                      store,
-                      key,
-                      Value(val:, expires_at: get_expiry(Some(seconds))),
-                    )
-                    RespStr("OK")
-                  }
-                  _ -> RespErr("ERR failed to parse EX number")
-                }
-              }
-              "NX", "EX" -> RespErr("ERR EX requires a number")
-              "NX", _ -> RespErr("ERR extra arg")
-              _, _ -> RespErr("ERR invalid args3")
-            }
-          }
-          _ -> RespErr("ERR invalid args2")
         }
       }
       _ -> RespErr("ERR invalid args")
