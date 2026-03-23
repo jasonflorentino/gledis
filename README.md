@@ -1,6 +1,6 @@
-# gledis
+# 🌠 Gledis
 
-A toy implementation of Redis and the [Redis serialization protocol](https://redis.io/docs/latest/develop/reference/protocol-spec/) in [Gleam](https://gleam.run/) so I can get familiar with the language.
+A toy implementation of Redis (and the [Redis serialization protocol](https://redis.io/docs/latest/develop/reference/protocol-spec/)) using [Gleam](https://gleam.run/) so I can get more familiar with the language.
 
 ## Try it
 
@@ -13,12 +13,17 @@ A toy implementation of Redis and the [Redis serialization protocol](https://red
 $ redis-cli
 127.0.0.1:6379> ping
 PONG
-127.0.0.1:6379> get name
-(nil)
-127.0.0.1:6379> set name jason
+127.0.0.1:6379> set name jason EX 10
 OK
+127.0.0.1:6379> set name bryan NX
+(nil)
 127.0.0.1:6379> get name
 jason
+# wait 10 seconds for expiry
+127.0.0.1:6379> get name
+(nil)
+127.0.0.1:6379> set name bryan NX
+OK
 ```
 
 ## Testing
