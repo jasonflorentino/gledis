@@ -31,15 +31,23 @@ for i in $(seq 1 10); do
 done
 
 # Tests
-assert_eq "$($CLI GET name)" "" "GET name returns nil"
-assert_eq "$($CLI SET name jason EX 5)" "OK" "SET name with expiry"
-assert_eq "$($CLI GET name)" "jason" "GET name returns 'jason'"
-assert_eq "$($CLI SET name bryan NX)" "" "SET name with NX returns nil"
+assert_eq "$($CLI PING)" "PONG" "PING works"
+assert_eq "$($CLI GET name)" "" "GET returns nil"
+assert_eq "$($CLI SET name alice)" "OK" "SET works"
+assert_eq "$($CLI GET name)" "alice" "GET returns 'alice'"
+assert_eq "$($CLI SET name jason EX 3)" "OK" "SET without nx works"
+assert_eq "$($CLI GET name)" "jason" "GET returns 'jason'"
+assert_eq "$($CLI SET name bryan NX)" "" "SET with NX returns nil"
 
-echo "Waiting 6 seconds for TTL expiry..."
-sleep 6
+echo "Waiting 4 seconds for TTL expiry..."
+sleep 4
 
-assert_eq "$($CLI SET name bryan NX)" "OK" "SET name with NX returns OK after expiry"
-assert_eq "$($CLI GET name)" "bryan" "GET name returns 'bryan'"
+assert_eq "$($CLI SET name bryan NX EX 3)" "OK" "SET with NX returns OK after expiry"
+assert_eq "$($CLI GET name)" "bryan" "GET returns 'bryan'"
+
+echo "Waiting 4 seconds for TTL expiry..."
+sleep 4
+
+assert_eq "$($CLI GET name)" "" "GET returns nil"
 
 echo "All tests passed!"
