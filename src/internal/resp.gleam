@@ -142,10 +142,3 @@ fn size(val: RespType) -> Int {
     RespNull -> -1
   }
 }
-
-pub fn unwrap_bulk(bulk: RespType) -> Result(String, String) {
-  case bulk {
-    RespBulk(val) -> Ok(val)
-    _ -> Error("not a bulk")
-  }
-}
