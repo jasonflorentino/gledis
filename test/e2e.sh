@@ -20,15 +20,16 @@ echo "Server logging to server.log"
 trap "kill -- -$SERVER_PID 2>/dev/null" EXIT
 
 # Wait for it to be ready
-echo "Waiting for server to start..."
-for i in $(seq 1 10); do
+echo -n "Waiting for server to start."
+for i in $(seq 1 25); do
   if $CLI ping &>/dev/null; then
-    echo " Server ready!"
+    echo "Server ready!"
     break
   fi
   printf "."
-  sleep 0.5
+  sleep 0.2
 done
+echo
 
 # Tests
 assert_eq "$($CLI PING)" "PONG" "PING works"
@@ -50,4 +51,5 @@ sleep 4
 
 assert_eq "$($CLI GET name)" "" "GET returns nil"
 
+echo
 echo "All tests passed!"

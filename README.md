@@ -34,7 +34,7 @@ OK
   ```
 - There's also an end to end test that spins up the server, the `redis-cli`, and asserts that outputs match their commands which helps ensure behaviours dont regress over refactors.
   ```shell
-  ./test_e2e.sh
+  ./test/e2e.sh
   ```
 
 ## Development
