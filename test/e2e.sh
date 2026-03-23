@@ -3,14 +3,18 @@ set -em
 
 CLI="redis-cli"
 
-assert_eq() {
-  local got="$1" expected="$2" label="$3"
-  if [ "$got" = "$expected" ]; then
-    echo "✓ $label"
-  else
-    echo "✗ $label: expected '$expected', got '$got'"
-    exit 1
-  fi
+# 1 Command
+# 2 Expected
+# 3 Label
+test() {
+    local got="$($CLI $1)" expected="$2" label="$3"
+    if [ "$got" = "$expected" ]; then
+      echo "✓ $label"
+    else
+      echo "✗ $label: expected '$expected', got '$got'"
+      echo "  command: $1"
+      exit 1
+    fi
 }
 
 # Start the server
@@ -31,25 +35,28 @@ for i in $(seq 1 25); do
 done
 echo
 
+TTL=3
+WAIT=$((TTL + 1))
+
 # Tests
-assert_eq "$($CLI PING)" "PONG" "PING works"
-assert_eq "$($CLI GET name)" "" "GET returns nil"
-assert_eq "$($CLI SET name alice)" "OK" "SET works"
-assert_eq "$($CLI GET name)" "alice" "GET returns 'alice'"
-assert_eq "$($CLI SET name jason EX 3)" "OK" "SET without nx works"
-assert_eq "$($CLI GET name)" "jason" "GET returns 'jason'"
-assert_eq "$($CLI SET name bryan NX)" "" "SET with NX returns nil"
+test "PING" "PONG" "PING works"
+test "GET name" "" "GET returns nil"
+test "SET name alice" "OK" "SET works"
+test "GET name" "alice" "GET returns 'alice'"
+test "SET name jason EX $TTL" "OK" "SET without nx works"
+test "GET name" "jason" "GET returns 'jason'"
+test "SET name bryan NX" "" "SET with NX returns nil"
 
-echo "Waiting 4 seconds for TTL expiry..."
-sleep 4
+echo "Waiting $WAIT seconds for TTL expiry..."
+sleep $WAIT
 
-assert_eq "$($CLI SET name bryan NX EX 3)" "OK" "SET with NX returns OK after expiry"
-assert_eq "$($CLI GET name)" "bryan" "GET returns 'bryan'"
+test "SET name bryan NX EX $TTL" "OK" "SET with NX returns OK after expiry"
+test "GET name" "bryan" "GET returns 'bryan'"
 
-echo "Waiting 4 seconds for TTL expiry..."
-sleep 4
+echo "Waiting $WAIT seconds for TTL expiry..."
+sleep $WAIT
 
-assert_eq "$($CLI GET name)" "" "GET returns nil"
+test "GET name" "" "GET returns nil"
 
 echo
 echo "All tests passed!"
