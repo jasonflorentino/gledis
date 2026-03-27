@@ -1,6 +1,7 @@
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import internal/log.{debug}
 import internal/resp.{
@@ -13,18 +14,41 @@ pub opaque type Value {
   Value(val: String, expires_at: Option(Time))
 }
 
-pub fn handle(value: RespType, store: table.Table(String, Value)) -> RespType {
+pub type Command {
+  Command
+  Ping
+  Get
+  Set
+}
+
+pub fn read_command(
+  value: RespType,
+) -> Result(#(Command, List(RespType)), RespType) {
   case value {
     RespArr([RespBulk(val), ..rest]) -> {
       case string.uppercase(val) {
-        "COMMAND" -> RespArr([])
-        "PING" -> RespStr("PONG")
-        "GET" -> get(rest, store)
-        "SET" -> set(rest, store)
-        _ -> RespErr("ERR Unknown command")
+        "COMMAND" -> Ok(#(Command, rest))
+        "PING" -> Ok(#(Ping, rest))
+        "GET" -> Ok(#(Get, rest))
+        "SET" -> Ok(#(Set, rest))
+        _ -> Error(RespErr("ERR Unknown command"))
       }
     }
-    _ -> RespErr("ERR Invalid command")
+    _ -> Error(RespErr("ERR Invalid command"))
+  }
+}
+
+pub fn handle(value: RespType, store: table.Table(String, Value)) -> RespType {
+  case read_command(value) {
+    Ok(#(command, rest)) -> {
+      case command {
+        Command -> RespArr([])
+        Ping -> RespStr("PONG")
+        Get -> get(rest, store)
+        Set -> set(rest, store)
+      }
+    }
+    Error(err) -> err
   }
 }
 

@@ -3,6 +3,7 @@ import gleam/erlang/process
 import gleam/io
 import gleam/option.{None}
 import glisten.{Packet}
+import internal/aof
 import internal/command
 import internal/log.{debug, info}
 import internal/resp
@@ -15,6 +16,7 @@ pub fn main() -> Nil {
   io.println("Starting server...")
 
   let store = table.new("db1")
+  let assert Ok(aof_stream) = aof.start("db1.aof")
 
   let assert Ok(_) =
     glisten.new(fn(_conn) { #(Nil, None) }, fn(state, msg, conn) {
@@ -32,6 +34,16 @@ pub fn main() -> Nil {
       debug("response_bytes: ~p", [response_bytes])
 
       let assert Ok(_) = glisten.send(conn, response_bytes)
+
+      case command.read_command(command) {
+        Ok(#(cmd, _)) -> {
+          case cmd {
+            command.Set -> aof.write(aof_stream, msg)
+            _ -> Nil
+          }
+        }
+        Error(_) -> Nil
+      }
 
       glisten.continue(state)
     })
