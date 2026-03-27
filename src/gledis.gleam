@@ -16,7 +16,7 @@ pub fn main() -> Nil {
   io.println("Starting server...")
 
   let store = table.new("db1")
-  let assert Ok(aof_stream) = aof.start("db1.aof")
+  let aof_stream = aof.start("db1.aof")
 
   let assert Ok(_) =
     glisten.new(fn(_conn) { #(Nil, None) }, fn(state, msg, conn) {
